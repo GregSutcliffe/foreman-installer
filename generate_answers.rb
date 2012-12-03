@@ -3,58 +3,7 @@
 require 'yaml'
 require "highline/import"
 
-# colour scheme
-
-HighLine.color_scheme = HighLine::ColorScheme.new do |cs|
-  cs[:headline]        = [ :bold, :yellow, :on_black ]
-  cs[:horizontal_line] = [ :bold, :white, :on_black]
-  cs[:question]        = [ :bold, :green, :on_black]
-  cs[:info]            = [ :bold, :cyan, :on_black]
-end
-
-# Line wrapping - don't go over 80 chars even the terminal is huge...
-
-data = HighLine::SystemExtensions.terminal_size
-$terminal.wrap_at = data.first > 80 ? 80 : data.first
-$terminal.page_at = data.last
-
-# defaults
-
-$outfile = "answers.yaml"
-$output = {
-  "foreman" => true,
-  "foreman_proxy" => true,
-  "puppet" => true,
-  "puppetmaster" => true,
-}
-
-# helpers
-
-def save_and_exit
-  File.open($outfile, 'w') {|f| f.write(YAML.dump($output)) }
-  say("\nOkay, you're all set! Check <%= color('answers.yaml', :cyan) %> for your config")
-  exit 0
-end
-
-def display_hash modulename = nil
-  stat = if modulename.nil?
-           "\n#{YAML.dump($output)}"
-         elsif $output[modulename] == true
-           "#{modulename.capitalize} is enabled with defaults\n"
-         elsif $output[modulename] == false
-           "#{modulename.capitalize} is disabled\n"
-         else
-           "#{modulename.capitalize} is enabled with overrides:\n#{YAML.dump($output[modulename])}"
-         end
-  say("\n<%= color('Current config is:\n#{stat}', :info) %>")
-end
-
-def menu_helper type,name,key=nil,value=nil
-  case type
-  when "agree"
-    add_keyvalue_pair(name, key, agree("y/n?",true))
-  end
-end
+# Bonus, per-module, questions defined up top where they're easy to find :)
 
 def foreman_questions
   {
@@ -85,7 +34,10 @@ def foreman_proxy_questions
 end
 
 def puppet_questions
+  # this is only really here to provide a non-boolen example...
   {
+    "What port should the agent contact the master on? (default: 8140) " \
+    => 'menu_helper("string", "puppet", "port")',
   }
 end
 
@@ -96,6 +48,61 @@ def puppetmaster_questions
     "Should Puppetmaster run under apache & passenger? (default: true) " \
     => 'menu_helper("agree", "puppetmaster", "passenger")',
   }
+end
+
+# colour scheme for prompts
+
+HighLine.color_scheme = HighLine::ColorScheme.new do |cs|
+  cs[:headline]        = [ :bold, :yellow, :on_black ]
+  cs[:horizontal_line] = [ :bold, :white, :on_black]
+  cs[:question]        = [ :bold, :green, :on_black]
+  cs[:info]            = [ :bold, :cyan, :on_black]
+end
+
+# Line wrapping - don't go over 80 chars even if the terminal is huge...
+
+data = HighLine::SystemExtensions.terminal_size
+$terminal.wrap_at = data.first > 80 ? 80 : data.first
+$terminal.page_at = data.last
+
+# default output
+
+$outfile = "answers.yaml"
+$output = {
+  "foreman" => true,
+  "foreman_proxy" => true,
+  "puppet" => true,
+  "puppetmaster" => true,
+}
+
+# helper methods
+
+def save_and_exit
+  File.open($outfile, 'w') {|f| f.write(YAML.dump($output)) }
+  say("\nOkay, you're all set! Check <%= color('answers.yaml', :cyan) %> for your config")
+  exit 0
+end
+
+def display_hash modulename = nil
+  stat = if modulename.nil?
+           "\n#{YAML.dump($output)}"
+         elsif $output[modulename] == true
+           "#{modulename.capitalize} is enabled with defaults\n"
+         elsif $output[modulename] == false
+           "#{modulename.capitalize} is disabled\n"
+         else
+           "#{modulename.capitalize} is enabled with overrides:\n#{YAML.dump($output[modulename])}"
+         end
+  say("\n<%= color('Current config is:\n#{stat}', :info) %>")
+end
+
+def menu_helper type,name,key=nil,value=nil
+  case type
+  when "agree"
+    add_keyvalue_pair(name, key, agree("y/n?",true))
+  when "string"
+    add_keyvalue_pair(name, key, ask("?"))
+  end
 end
 
 def configure_module modulename
@@ -153,7 +160,8 @@ while true do
     ["foreman","foreman_proxy","puppet","puppetmaster"].each do |name|
       menu.choice "Configure #{name.capitalize} settings" do configure_module name end
     end
-    menu.choice :display_config do display_hash end
-    menu.choice :save_and_exit do save_and_exit end
+    menu.choice "Display current config" do display_hash end
+    menu.choice "Save and Exit" do save_and_exit end
+    menu.choice "Exit without Saving" do say("Bye!") ; exit 0 end
   end
 end
