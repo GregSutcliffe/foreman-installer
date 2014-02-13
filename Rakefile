@@ -1,4 +1,5 @@
 require 'rake/clean'
+require 'yaml'
 
 BUILDDIR = File.expand_path(ENV['BUILDDIR'] || '_build')
 PREFIX = ENV['PREFIX'] || '/usr/local'
@@ -22,13 +23,30 @@ file BUILDDIR do
 end
 
 file "#{BUILDDIR}/foreman-installer.yaml" => 'config/foreman-installer.yaml' do |t|
-  cp t.prerequisites[0], t.name
-  sh 'sed -i "s#\(.*answer_file:\).*#\1 %s#" %s' % ["#{SYSCONFDIR}/foreman/foreman-installer-answers.yaml", t.name]
-  sh 'sed -i "s#\(.*installer_dir:\).*#\1 %s#" %s' % ["#{DATADIR}/foreman-installer", t.name]
-  sh 'sed -i "s#\(.*modules_dir:\).*#\1 %s#" %s' % ["#{DATADIR}/foreman-installer/modules", t.name]
+  data = YAML.load_file(t.prerequisites[0])
+  data[:answer_file]   = "#{SYSCONFDIR}/foreman/foreman-installer-answers.yaml"
+  data[:installer_dir] = "#{DATADIR}/foreman-installer"
+  data[:modules_dir]   = "#{DATADIR}/foreman-installer/modules"
   if ENV['KAFO_MODULES_DIR']
-    sh 'sed -i "s#.*\(:kafo_modules_dir:\).*#\1 %s#" %s' % [ENV['KAFO_MODULES_DIR'], t.name]
+    data[:kafo_modules_dir] = ENV['KAFO_MODULES_DIR']
   end
+
+  data[:mapping] ||= {}
+  Dir["#{BUILDDIR}/modules/foreman/manifests/plugin/*.pp"].each do |plugin|
+    name = plugin.split('/').last.split('.').first
+    data[:mapping][:"foreman::plugin::#{name}"] = {
+      :dir_name      => 'foreman',
+      :manifest_name => "plugin/#{name}"
+      }
+  end
+  Dir["#{BUILDDIR}/modules/foreman/manifests/compute/*.pp"].each do |compute|
+    name = compute.split('/').last.split('.').first
+    data[:mapping][:"foreman::compute::#{name}"] = {
+      :dir_name      => 'foreman',
+      :manifest_name => "compute/#{name}"
+      }
+  end
+  File.open(t.name, 'w') { |file| file.write data.to_yaml }
 end
 
 file "#{BUILDDIR}/foreman-installer" => 'bin/foreman-installer' do |t|
@@ -85,10 +103,10 @@ end
 task :build => [
   BUILDDIR,
   'VERSION',
+  "#{BUILDDIR}/modules",
   "#{BUILDDIR}/foreman-installer.yaml",
   "#{BUILDDIR}/foreman-installer",
   "#{BUILDDIR}/foreman-installer.8",
-  "#{BUILDDIR}/modules",
 ]
 
 task :install => :build do |t|
