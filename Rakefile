@@ -54,14 +54,15 @@ file "#{BUILDDIR}/foreman-installer" => 'bin/foreman-installer' do |t|
   sh 'sed -i "s#\(^.*CONFIG_FILE = \'/etc/foreman\'*.\).*#  CONFIG_FILE = %s#" %s' % ["'#{SYSCONFDIR}/foreman/' + config_filename", t.name]
 end
 
-file "#{BUILDDIR}/options.asciidoc" => "#{BUILDDIR}/modules" do |t|
+file "#{BUILDDIR}/options.asciidoc" => ["#{BUILDDIR}/modules","#{BUILDDIR}/foreman-installer.yaml"] do |t|
   ENV['PATH'].split(':').push(
     '/usr/share/gems/bin',
     '/usr/lib/ruby/gems/1.8/bin',
     '/usr/bin',
     ENV['KAFO_EXPORTER']).each do |exporter|
     if File.executable? "#{exporter}/kafo-export-params"
-      sh "#{exporter}/kafo-export-params -c config/foreman-installer.yaml -f asciidoc > #{BUILDDIR}/options.asciidoc"
+      sh "cat #{t.prerequisites[1]}"
+      sh "#{exporter}/kafo-export-params -c #{t.prerequisites[1]} -f asciidoc > #{BUILDDIR}/options.asciidoc"
     end
   end
 end
@@ -106,10 +107,9 @@ task :build => [
   "#{BUILDDIR}/modules",
   "#{BUILDDIR}/foreman-installer.yaml",
   "#{BUILDDIR}/foreman-installer",
-  "#{BUILDDIR}/foreman-installer.8",
 ]
 
-task :install => :build do |t|
+task :install_base => :build do |t|
   mkdir_p "#{DATADIR}/foreman-installer"
   cp_r Dir.glob('{checks,config,VERSION,README.md,LICENSE}'), "#{DATADIR}/foreman-installer"
   cp_r "#{BUILDDIR}/modules", "#{DATADIR}/foreman-installer"
@@ -120,10 +120,20 @@ task :install => :build do |t|
 
   mkdir_p SBINDIR
   install "#{BUILDDIR}/foreman-installer", "#{SBINDIR}/foreman-installer", :mode => 0755, :verbose => true
+end
 
+task :install_man => [ :install_base, "#{BUILDDIR}/foreman-installer.8" ] do |t|
+  # This requires the config file that was written to the BUILDDIR, which in
+  # turn specifes the answers file which is written to SYSCONFDIR, so we do it last
   mkdir_p "#{MANDIR}/man8"
   cp "#{BUILDDIR}/foreman-installer.8", "#{MANDIR}/man8/"
 end
+
+task :install => [
+  :build,
+  :install_base,
+  :install_man,
+]
 
 task :default => :build
 
